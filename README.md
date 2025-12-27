@@ -1,76 +1,121 @@
-# Python 台股分析機器人 (Stock Analysis Bot)
+# Python 台股與財報分析機器人 (Stock Analysis Bot)
 
-這是一個自動化的股票分析機器人，使用 Python 撰寫，部署於 Google Cloud Run。
-核心功能包含：
-1. 讀取 Google Sheets 上的股票觀察清單 (Watchlist)。
-2. 使用 FinMind API 抓取台股日線資料。
-3. 計算技術指標 (MA, KD)。
-4. 使用 Google Gemini API 產生繁體中文分析短評。
-5. 透過 LINE Messaging API 發送每日彙整報告。
+這是一個全自動化的台股分析機器人，部署於 **Google Cloud Run**。它結合了 **FinMind** (股價/財報)、**Mystery Pyramid** (籌碼)、**Google Gemini AI** (EPS 預估) 與 **LINE Messaging API**，每天自動為您推送最精準的市場分析。
 
-## 專案結構
+## 核心功能 (Features)
 
-- `main.py`: Flask 應用程式入口，處理 `/run_analysis` 請求。
-- `core/`: 核心邏輯模組
-  - `sheets.py`: 處理 Google Sheets 讀取。
-  - `data.py`: 處理 FinMind 資料抓取。
-  - `analysis.py`: 處理技術指標計算與 AI 分析。
-  - `notifier.py`: 處理 LINE 訊息發送。
-- `config.py`: 設定檔管理。
+### 1. 市場概況 (Market Overview)
+- **大盤分析**：每日報告開頭自動分析 **加權指數 (TAIEX)** 與 **櫃買指數 (TPEx)**。
+- **技術指標**：包含收盤價、日線慣性 (Inertia)、三日狀態 (3-Day Rules)。
 
-## 本地開發與測試
+### 2. 個股全方位分析 (Comprehensive Stock Analysis)
+針對 Google Sheets 觀察清單中的每一檔股票，進行四大面向分析：
 
-### 1. 環境設定
+*   **[基本訊息]**：收盤價、漲跌幅。
+*   **[技術面]**：
+    *   **慣性分析**：日線 (Daily)、週線 (Weekly)、月線 (Monthly) 慣性判斷 (與多空轉折)。
+    *   **三日狀態**：判斷 3 日高點/低點的突破與跌破，標示「多方攻擊」、「空方攻擊」或「盤整」。
+    *   **支撐壓力**：自動計算近期的支撐區與壓力區。
+*   **[籌碼面] (Chips)**：
+    *   自動爬取「神秘金字塔」股權分散表。
+    *   **大戶/散戶動向**：計算 400 張以上大戶與 50 張以下散戶的持股增減。
+    *   **連續週數**：自動偵測大戶/散戶連續增減的週數。
+*   **[基本面] (Fundamentals)**：
+    *   **月營收**：最新月營收 (MoM, YoY)。
+    *   **季財報**：毛利率 (GM)、營益率 (OM)、淨利率 (NM)、每股盈餘 (EPS)。
 
-請先建立 `.env` 檔案，並填入以下資訊：
+### 3. AI 智能擴充 (Powered by Gemini 2.5 Pro)
+*   **法人 EPS 預估**：
+    *   當偵測到新營收或財報時，自動觸發 AI 聯網搜尋。
+    *   搜尋 **本年度** 與 **下年度** 的法人 EPS 預估值。
+    *   **極簡輸出**：只顯示「年份 / 數值 / 趨勢 (調升/調降) / 來源連結」，拒絕廢話。
+    *   使用 `google-genai` V1 SDK 與 Google Search Tool。
+
+### 4. 自動化整合 (Automation)
+*   **Google Sheets連動**：
+    *   讀取 Watchlist (代號/名稱)。
+    *   **自動補名**：若清單中缺少股票名稱，機器人會自動抓取並更新回 Google Sheet。
+    *   **狀態追蹤**：更新「最後營收月份」與「最後財報季度」，避免重複觸發 AI 分析。
+*   **LINE 推播**：
+    *   分析結果自動推送到 LINE。
+    *   支援長訊息自動分割。
+    *   Webhook 回應：可透過簡單指令與機器人互動 (如 "id", "測試")。
+
+---
+
+## 專案結構 (Project Structure)
+
+```text
+.
+├── main.py             # 程式入口 (Flask Web Server / Cloud Run Entrypoint)
+├── deploy.sh           # 自動化部署腳本 (一鍵部署到 Cloud Run)
+├── config.py           # 環境變數設定
+├── requirements.txt    # Python 依賴套件
+├── core/
+│   ├── analysis.py     # 整合分析邏輯 (Market, Tech, Chip, Fundamental, Report)
+│   ├── strategy.py     # 技術指標運算 (Inertia, 3-Day Rule, Support/Resistance)
+│   ├── chips.py        # 籌碼面爬蟲 (Mystery Pyramid)
+│   ├── ai.py           # Gemini AI 搜尋與生成 (EPS Forecast)
+│   ├── data.py         # FinMind 資料獲取
+│   ├── sheets.py       # Google Sheets 讀寫
+│   └── notifier.py     # LINE 訊息發送
+└── scripts/            # 測試與工具腳本
+```
+
+---
+
+## 快速開始 (Quick Start)
+
+### 1. 環境變數 (.env)
+請複製 `.env.example` (若有) 或建立 `.env`，填入以下必要資訊：
 
 ```ini
-# FinMind API Token (選填，建議申請以提高額度)
-FINMIND_API_TOKEN=your_finmind_token
+# API Keys
+FINMIND_API_TOKEN=your_finmind_token  (建議申請)
+GEMINI_API_KEY=your_gemini_api_key    (必須支援 Gemini 2.5 Pro / Google Search)
 
-# Google Gemini API Key (必填)
-GEMINI_API_KEY=your_gemini_api_key
+# LINE Messaging API
+LINE_CHANNEL_ACCESS_TOKEN=...
+LINE_CHANNEL_SECRET=...
+LINE_USER_ID=...
 
-# LINE Messaging API 設定 (必填)
-LINE_CHANNEL_ACCESS_TOKEN=your_line_access_token
-LINE_CHANNEL_SECRET=your_line_secret
-LINE_USER_ID=your_user_id (或是 Group ID)
-
-# Google Sheets 設定
-# 您的 Service Account JSON 檔案路徑
+# Google Sheets
 GOOGLE_SHEETS_CREDENTIALS_FILE=credentials.json
-# 您的觀察清單 Google Sheet 網址
-GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/xxxxxxx
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID
 ```
 
-### 2. 安裝依賴
+### 2. Google Sheets 格式
+您的觀察清單 Sheet 應具備以下欄位 (Header 在第一行)：
+
+| Stock ID (A) | Stock Name (B) | Last Rev (C) | Last Fin (D) |
+| :--- | :--- | :--- | :--- |
+| 2330 | 台積電 | 2024-11 | 2024-Q3 |
+| 3037 | (若空缺會自動補) | | |
+
+### 3. 部署到 Google Cloud Run
+本專案提供一鍵部署腳本，會自動讀取 `.env` 並設定 Cloud Run 環境變數與 Cloud Scheduler 排程。
 
 ```bash
-pip install -r requirements.txt
+# 確保已安裝並登入 gcloud CLI
+./deploy.sh
 ```
 
-### 3. 準備 Google Sheets 憑證
+部署成功後：
+*   **Webhook**: `https://<your-service-url>/callback` (請填入 LINE Developer Console)
+*   **Scheduler**: 預設每週一至週五 早上 06:00 (Asia/Taipei) 自動執行分析。
 
-請將您的 Google Cloud Service Account 金鑰下載並儲存為 `credentials.json` (或您的自訂檔名)，放在專案根目錄。
-**注意：** 您必須在 Google Sheet 的共用設定中，將該 Service Account 的 email 加入編輯者或檢視者。
-
-### 4. 執行應用程式
-
+### 4. 手動觸發
+您也可以透過瀏覽器或 curl 手動觸發分析：
 ```bash
-stock_id="2330" python main.py
+curl -X POST https://<your-service-url>/run_analysis
 ```
-(實際上 `main.py` 是 web server，可以執行後用瀏覽器或 curl 觸發)
 
-```bash
-python main.py
-```
-啟動後，訪問 `http://localhost:8080/run_analysis` 即可手動觸發分析並發送 LINE 通知。
+---
 
-## Google Cloud Run 部署
-
-1. **建立 Docker 映像檔**
-   (建議直接使用 Cloud Build 或本機 docker build)
-
-2. **部署到 Cloud Run**
-   設定環境變數 (Environment Variables) 對應 `.env` 的內容。
-   *注意：`GOOGLE_SHEETS_CREDENTIALS_FILE` 在 Cloud Run 上處理比較麻煩，建議可以將 JSON 內容 base64 encode 後放在環境變數，再由程式代碼還原，或是使用 Google Secret Manager。本範例預設讀取檔案，您可能需要將 json 檔 COPY 進 Docker image (不建議提交到 git) 或使用 Secret Manager 掛載。*
+## 技術棧 (Tech Stack)
+*   **Language**: Python 3.9+
+*   **Web Framework**: Flask
+*   **Server**: Gunicorn
+*   **Cloud Platform**: Google Cloud Run + Cloud Scheduler
+*   **Data API**: FinMind, Yahoo Finance (Backup), Mystery Pyramid (Scraping)
+*   **AI Model**: Google Gemini 2.5 Pro (via `google-genai` SDK)
