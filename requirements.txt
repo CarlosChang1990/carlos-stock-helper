@@ -1,0 +1,11 @@
+flask
+line-bot-sdk
+python-dotenv
+pandas
+finmind
+gspread
+oauth2client
+google-generativeai
+google-genai
+requests
+gunicorn
