@@ -83,6 +83,19 @@ LINE_USER_ID=...
 GOOGLE_SHEETS_CREDENTIALS_FILE=credentials.json
 GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID
 ```
+```
+
+### 1.5 準備 Google Sheets 憑證 (credentials.json)
+為了讓機器人讀寫您的試算表，請依照以下步驟設定 Google Service Account：
+
+1.  前往 **[Google Cloud Console](https://console.cloud.google.com/)**。
+2.  建立一個新專案 (或選擇現有專案)。
+3.  搜尋並啟用 **Google Sheets API** 和 **Google Drive API**。
+4.  前往 **IAM 與管理 > 服務帳戶**，建立一個服務帳戶。
+5.  進入該服務帳戶，選擇 **金鑰 (Keys)** > **新增金鑰** > **建立新金鑰** > 選擇 **JSON** 格式。
+6.  下載 JSON 檔案，將其重新命名為 `credentials.json` 並放入專案根目錄。
+7.  **重要步驟**：打開您的 `credentials.json`，複製裡面的 `client_email` 地址 (例如 `stock-bot@project-id.iam.gserviceaccount.com`)。
+8.  回到您的 Google Sheet 試算表，點擊右上角 **共用 (Share)**，將該 Email 加入並給予 **編輯者 (Editor)** 權限。
 
 ### 2. Google Sheets 格式
 您的觀察清單 Sheet 應具備以下欄位 (Header 在第一行)：
