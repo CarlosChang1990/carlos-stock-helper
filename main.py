@@ -4,13 +4,16 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 from config import LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
-from core.sheets import get_watchlist_details, update_last_revenue_month
-from core.sheets import get_watchlist_details, update_last_revenue_month, update_last_financial_quarter, update_stock_name_cell
-# from core.data import fetch_active_data # Removed invalid import
+from core.sheets import (
+    get_watchlist_details, 
+    update_last_revenue_month, 
+    update_last_financial_quarter, 
+    update_stock_name_cell
+)
 from core.data import get_stock_name
 from core.analysis import analyze_stock
 from core.notifier import send_line_notification
-from core.test_logic import run_batch_test # Import the new logic
+from core.test_logic import run_batch_test 
 import logging
 
 app = Flask(__name__)

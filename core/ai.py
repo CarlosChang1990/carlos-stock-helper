@@ -38,13 +38,13 @@ def search_eps_forecast(stock_id, stock_name):
         tools = [types.Tool(google_search=types.GoogleSearch())]
         
         # Model Name
-        model_name = "gemini-2.5-pro" # Or gemini-2.0-flash-exp if 2.5 not avail via this client
+        model_name = "gemini-flash-latest" # Stable, efficient, supports search
         
         prompt = f"""
 你是一名極簡風格的財務助手。請針對台灣股市代號 {stock_id} ({stock_name}) 進行「法人EPS預估」的聯網搜尋。
 範圍限定：**最近一個月內**。
 
-目標：找出「本年度」與「下年度」(若有) 的 EPS 預估值。
+目標：找出「本年度」與「下年度」(若有) 的 EPS 預估值 (單位：新台幣 TWD)。
 
 請嚴格遵守以下「極簡輸出規則」：
 1. **只輸出數字與趨勢**：不要任何摘要、不要引言、不要廢話。
@@ -63,7 +63,7 @@ Source: [工商時報](https://...)
         # Retry logic for Quota (429) errors
         logger.info(f"Generating EPS forecast search for {stock_id} {stock_name} (Model: {model_name})...")
         
-        delay = 10
+        delay = 60
         retries = 3
         
         for attempt in range(retries):
@@ -86,8 +86,8 @@ Source: [工商時報](https://...)
             except Exception as e:
                 error_msg = str(e)
                 if "429" in error_msg or "Quota" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                    # Wait time increases: 15s, 30s, 45s...
-                    wait_time = 15 * (attempt + 1)
+                    # Wait time increases: 60s, 120s, 180s...
+                    wait_time = 60 * (attempt + 1)
                     logger.warning(f"Gemini EPS Search 觸發限額 (429)，等待 {wait_time} 秒後重試 ({attempt + 1}/{retries})...")
                     time.sleep(wait_time)
                 else:

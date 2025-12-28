@@ -1,6 +1,5 @@
 import pandas as pd
 import logging
-import ta
 from ta.momentum import StochasticOscillator
 from ta.trend import SMAIndicator
 
@@ -82,16 +81,14 @@ def analyze_stock(stock_id, last_revenue_month=None, last_financial_quarter=None
     df = calculate_technical_indicators(df)
     
     # 3. 策略/邏輯運算 (技術面)
-    # 3. 策略/邏輯運算 (技術面)
     from core.strategy import analyze_revenue, analyze_financials, analyze_all_inertia, analyze_3day_high_low
     strategy_result = {} # Empty dict for now, used for passing info to AI
     inertia_result = analyze_all_inertia(df)
-    three_day_info = analyze_3day_high_low(df)
+    three_day_result = analyze_3day_high_low(df, "日線")
     
-    # Add info for AI
+    # Add info for AI (Simple Version)
     strategy_result['inertia'] = inertia_result
-    strategy_result['three_day'] = three_day_info['state']
-    strategy_result['three_day_desc'] = three_day_info['description']
+    strategy_result['three_day'] = three_day_result['state']
     
     # 4. 營收分析
     from core.ai import search_eps_forecast
@@ -188,23 +185,31 @@ YoY: {revenue_result['yoy_pct']:.2f}%
     basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}"
 
     # --- 2. 技術面 ---
-    # Format 3-Day State string
-    three_day_str = three_day_info['state']
-    
-    if three_day_info.get('count', 0) > 0:
-        dates = three_day_info.get('trigger_dates', [])
-        dates_str = f"[{', '.join(dates)}]" if dates else ""
-        if three_day_info['count'] > 1:
-            three_day_str += f" (連續 {three_day_info['count']} 次) {dates_str}"
-        else:
-            three_day_str += f" {dates_str}"
-            
+    # Helper to format 3-day line
+    def fmt_3day(res, label):
+        if not res: return None
+        base = f"{label}狀態: {res['state']}"
+        if res.get('count', 0) > 0:
+             dates = res.get('trigger_dates', [])
+             dates_str = f"[{', '.join(dates)}]" if dates else ""
+             if res['count'] > 1:
+                 base += f" (連{res['count']}) {dates_str}"
+             else:
+                 base += f" {dates_str}"
+        
+        # Start new line for Zone description if any
+        if 'description' in res and "最新" in res['description']: # Check if zone description exists
+             base += f"\n   ↳ {res['description']}"
+        return base
+
     technical_lines = [
+        # Inertia
         f"{inertia_result['daily']}",
         f"{inertia_result['weekly']}" if inertia_result['weekly'] else None,
         f"{inertia_result['monthly']}" if inertia_result['monthly'] else None,
-        f"三日狀態: {three_day_str}",
-        f"{three_day_info['description']}"
+        "", # Empty line
+        # 3-Day
+        fmt_3day(three_day_result, "日線"),
     ]
     technical_str = "\n".join([line for line in technical_lines if line])
     
@@ -244,7 +249,7 @@ YoY: {revenue_result['yoy_pct']:.2f}%
 
 [基本面]
 {fundamental_str}
------------------------------------------------
+----------------------
 """
     return {'report': output, 'revenue_update': revenue_update, 'financial_update': fin_update}
 
@@ -265,7 +270,7 @@ def analyze_index(index_id, index_name):
     
     # 3. Strategy
     inertia_result = analyze_all_inertia(df)
-    three_day_info = analyze_3day_high_low(df)
+    three_day_result = analyze_3day_high_low(df, "日線")
     
     # 4. Format Output
     last_row = df.iloc[-1]
@@ -283,17 +288,22 @@ def analyze_index(index_id, index_name):
     ]
     
     # 3-Day
-    three_day_str = three_day_info['state']
-    if three_day_info.get('count', 0) > 0:
-        dates = three_day_info.get('trigger_dates', [])
-        dates_str = f"[{', '.join(dates)}]" if dates else ""
-        if three_day_info['count'] > 1:
-            three_day_str += f" (連續 {three_day_info['count']} 次) {dates_str}"
-        else:
-             three_day_str += f" {dates_str}"
-             
-    tech_lines.append(f"三日狀態: {three_day_str}")
-    tech_lines.append(f"{three_day_info['description']}")
+    # 3-Day
+    def fmt_3day_simple(res, label):
+        if not res: return None
+        base = f"{label}狀態: {res['state']}"
+        if res.get('count', 0) > 0:
+             # Index report usually simpler, maybe keep trigger dates?
+             dates = res.get('trigger_dates', [])
+             dates_str = f"[{dates[-1]}]" if dates else "" # Show last date only for simplicity? Or full. Let's keep full.
+             if res['count'] > 1:
+                 base += f" (連{res['count']})"
+             # Index report: keep concise.
+        if 'description' in res and "最新" in res['description']:
+            base += f"\n   ↳ {res['description']}"
+        return base
+
+    tech_lines.append(fmt_3day_simple(three_day_result, "日線"))
     
     technical_str = "\n".join([line for line in tech_lines if line])
     
@@ -304,6 +314,6 @@ def analyze_index(index_id, index_name):
 
 [技術面]
 {technical_str}
------------------------------------------------
+---------------------------
 """
     return output.strip()

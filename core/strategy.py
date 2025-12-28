@@ -263,8 +263,9 @@ def analyze_inertia_with_state(df, time_type="日線"):
              current_date_str = pd.to_datetime(subset.index[i]).strftime('%Y/%m/%d')
         
         # 1. Up Change
-        # High > Prev High AND Low > Prev Low AND Close > Open
-        if (t1['max'] > t2['max']) and (t1['min'] > t2['min']) and (t1['close'] > t1['open']):
+        # High > Prev High AND Low > Prev Low AND Close > Open AND Close > Prev High (Breakout)
+        # User Feedback: "12/17 Close 176.5 not > 12/16 High 176.5"
+        if (t1['max'] > t2['max']) and (t1['min'] > t2['min']) and (t1['close'] > t1['open']) and (t1['close'] > t2['max']):
             if current_state == "慣性向上":
                 current_count += 1
                 current_trigger_dates.append(current_date_str)
@@ -274,8 +275,8 @@ def analyze_inertia_with_state(df, time_type="日線"):
                 current_trigger_dates = [current_date_str]
                 
         # 2. Down Change
-        # High < Prev High AND Low < Prev Low AND Close < Open
-        elif (t1['max'] < t2['max']) and (t1['min'] < t2['min']) and (t1['close'] < t1['open']):
+        # High < Prev High AND Low < Prev Low AND Close < Open AND Close < Prev Low (Breakdown)
+        elif (t1['max'] < t2['max']) and (t1['min'] < t2['min']) and (t1['close'] < t1['open']) and (t1['close'] < t2['min']):
             if current_state == "慣性向下":
                 current_count += 1
                 current_trigger_dates.append(current_date_str)
@@ -333,31 +334,18 @@ def resample_to_period(df, period):
          # Fallback if 'M'/'ME' issues
         resampled = df_res.resample(period).agg(logic)
         
-    return resampled.dropna()
+    return resampled.dropna().reset_index()
 
-    try:
-        resampled = df_res.resample(period).agg(logic)
-    except Exception:
-         # Fallback if 'M'/'ME' issues
-        resampled = df_res.resample(period).agg(logic)
-        
-    return resampled.dropna()
 
-def analyze_all_inertia(df, current_date=None):
+def analyze_all_inertia(df):
     """
-    分析 日/週/月 慣性 (根據日期決定是否執行)
+    分析 日/週/月 慣性 (固定全部顯示)
     
     Args:
         df: daily dataframe
-        current_date (datetime): 當前執行時間，若 None 則用 now()
     """
-    from datetime import datetime
-    if current_date is None:
-        current_date = datetime.now()
-        
-    last_row = df.iloc[-1]
     if 'date' in df.columns:
-        last_date = pd.to_datetime(last_row['date'])
+        last_date = pd.to_datetime(df.iloc[-1]['date'])
     else:
         last_date = pd.to_datetime(df.index[-1])
         
@@ -368,55 +356,51 @@ def analyze_all_inertia(df, current_date=None):
     w_inertia = None
     m_inertia = None
     
-    # Weekly: Run only on Monday (weekday=0)
-    # Compare Last Week (Completed) vs Week Before
-    if current_date.weekday() == 0:
-        df_w = resample_to_period(df, 'W')
-        # Ensure we have enough data (at least 2 weeks)
-        if len(df_w) >= 2:
-            w_res = analyze_inertia_with_state(df_w, "週線")
-            w_inertia = w_res['description']
+    # Weekly: Always run
+    df_w = resample_to_period(df, 'W')
+    if len(df_w) >= 2:
+        w_res = analyze_inertia_with_state(df_w, "週線")
+        w_inertia = w_res['description']
             
-    # Monthly: Run only if Today's Month != Last Data's Month
-    # Meaning today is the first run of a new month
-    if current_date.month != last_date.month:
-        df_m = resample_to_period(df, 'M') # or 'ME'
-        if len(df_m) >= 2:
-            m_res = analyze_inertia_with_state(df_m, "月線")
-            m_inertia = m_res['description']
+    # Monthly: Always run
+    df_m = resample_to_period(df, 'M') # or 'ME'
+    if len(df_m) >= 2:
+        m_res = analyze_inertia_with_state(df_m, "月線")
+        m_inertia = m_res['description']
     
     return {
         'daily': d_inertia,
         'weekly': w_inertia,
         'monthly': m_inertia,
-        # Potentially return full dicts if analysis.py needs raw data,
-        # but requirements said "list all dates", which description already has.
-        'daily_res': d_res, # Included for future flexibility
     }
 
-def analyze_3day_high_low(df):
+def analyze_3day_high_low(df, time_type="日線"):
     """
     三日高低點判斷 + 支撐/壓力區間 + 連續次數統計 + 觸發日期追蹤
     
+    Args:
+        df (pd.DataFrame): price data
+        time_type (str): "日線", "週線", "月線"
+        
     Returns:
         dict: {
             "state": str, 
             "count": int, 
-            "trigger_dates": list, # [str, str] List of dates where trigger occurred
+            "trigger_dates": list, 
             "zone_type": str,
             "zone_range": [min, max],
             "zone_date": str,
-            "description": str
+            "description": str (Formatted string with time_type)
         }
     """
     default_res = {
-        "state": "盤整/無訊號",
+        "state": "盤整",
         "count": 0,
         "trigger_dates": [],
         "zone_type": None,
         "zone_range": None,
         "zone_date": None,
-        "description": ""
+        "description": f"{time_type}盤整"
     }
     
     if df.empty or len(df) < 4:
@@ -494,7 +478,7 @@ def analyze_3day_high_low(df):
     res['count'] = current_count
     res['trigger_dates'] = current_trigger_dates
     
-    if current_state != "盤整/無訊號" and current_zone:
+    if current_state != "盤整" and current_zone:
         res['zone_type'] = current_zone['type']
         res['zone_range'] = current_zone['range']
         res['zone_date'] = current_zone['date']
@@ -503,7 +487,8 @@ def analyze_3day_high_low(df):
         min_v = float(res['zone_range'][0])
         max_v = float(res['zone_range'][1])
         
-        label = "最新支撐K棒" if res['zone_type'] == 'support' else "最新壓力K棒"
+        label = "最新支撐" if res['zone_type'] == 'support' else "最新壓力"
         res['description'] = f"{label}: {date_str} ({min_v}~{max_v})"
         
     return res
+
