@@ -263,9 +263,8 @@ def analyze_inertia_with_state(df, time_type="日線"):
              current_date_str = pd.to_datetime(subset.index[i]).strftime('%Y/%m/%d')
         
         # 1. Up Change
-        # High > Prev High AND Low > Prev Low AND Close > Open AND Close > Prev High (Breakout)
-        # User Feedback: "12/17 Close 176.5 not > 12/16 High 176.5"
-        if (t1['max'] > t2['max']) and (t1['min'] > t2['min']) and (t1['close'] > t1['open']) and (t1['close'] > t2['max']):
+        # High > Prev High AND Low > Prev Low AND Close > Prev Close (Price Up)
+        if (t1['max'] > t2['max']) and (t1['min'] > t2['min']) and (t1['close'] > t2['close']):
             if current_state == "慣性向上":
                 current_count += 1
                 current_trigger_dates.append(current_date_str)
@@ -275,8 +274,8 @@ def analyze_inertia_with_state(df, time_type="日線"):
                 current_trigger_dates = [current_date_str]
                 
         # 2. Down Change
-        # High < Prev High AND Low < Prev Low AND Close < Open AND Close < Prev Low (Breakdown)
-        elif (t1['max'] < t2['max']) and (t1['min'] < t2['min']) and (t1['close'] < t1['open']) and (t1['close'] < t2['min']):
+        # High < Prev High AND Low < Prev Low AND Close < Prev Close (Price Down)
+        elif (t1['max'] < t2['max']) and (t1['min'] < t2['min']) and (t1['close'] < t2['close']):
             if current_state == "慣性向下":
                 current_count += 1
                 current_trigger_dates.append(current_date_str)
