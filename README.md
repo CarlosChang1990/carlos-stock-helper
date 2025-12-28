@@ -83,7 +83,7 @@ LINE_USER_ID=...
 GOOGLE_SHEETS_CREDENTIALS_FILE=credentials.json
 GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID
 ```
-```
+
 
 ### 1.5 準備 Google Sheets 憑證 (credentials.json)
 為了讓機器人讀寫您的試算表，請依照以下步驟設定 Google Service Account：
