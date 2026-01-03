@@ -477,3 +477,164 @@ def analyze_3day_high_low(df, time_type="日線"):
         
     return res
 
+
+def analyze_ma_cross(df):
+    """
+    MA20 與 MA60 交叉分析 (黃金交叉/死亡交叉) + 3天觀察期
+    
+    Args:
+        df: 必須包含 'MA20' 和 'MA60' 欄位
+        
+    Returns:
+        dict: {
+            "state_desc": str,  # 描述目前狀態 (e.g. "黃金交叉", "黃金交叉觀察中 (第2天)")
+            "cross_date": str,  # 交叉發生日 (YYYY/MM/DD)
+            "key_price": float, # 關鍵高點(黃金) 或 關鍵低點(死亡)
+            "key_price_desc": str # 描述 (e.g. "關鍵點前後高點: 153.5")
+        }
+    """
+    default_res = {
+        "state_desc": "無交叉訊號",
+        "cross_date": None,
+        "key_price": None,
+        "key_price_desc": None
+    }
+    
+    # 至少需要足夠的資料來回溯
+    if df.empty or 'MA20' not in df.columns or 'MA60' not in df.columns or len(df) < 10:
+        return default_res
+        
+    # 重設索引以便計算
+    df = df.reset_index(drop=True)
+    
+    # 狀態定義
+    # "Neutral": 無明確交叉或已過很久
+    # "Golden_Obs": 黃金交叉觀察中 (count: 1~3)
+    # "Golden_Confirmed": 黃金交叉已確認
+    # "Death_Obs": 死亡交叉觀察中 (count: 1~3)
+    # "Death_Confirmed": 死亡交叉已確認
+    
+    # 我們需要模擬過去一段時間的狀態變化，為了效能，可以只跑最後 N 天
+    # 但為了捕捉"最近一次"確認的交叉，可能需要跑一段
+    # 假設跑最後 60 天
+    subset = df.tail(60).copy().reset_index(drop=True)
+    
+    current_state = "Neutral"
+    obs_count = 0
+    confirmed_cross_date = None
+    confirmed_price_range = [] # 用來存 [i-3, i+3] 的索引
+    
+    # 為了能回到"上一個狀態"，我們需要簡單記錄最後一個"Confirmed"的狀態
+    last_confirmed_state = "Neutral"
+    
+    # 從第 1 天開始 (比較 i 和 i-1)
+    for i in range(1, len(subset)):
+        row = subset.loc[i]
+        prev = subset.loc[i-1]
+        
+        ma20 = row['MA20']
+        ma60 = row['MA60']
+        prev_ma20 = prev['MA20']
+        prev_ma60 = prev['MA60']
+        
+        # 1. 偵測交叉訊號
+        cross_signal = None
+        if prev_ma20 <= prev_ma60 and ma20 > ma60:
+            cross_signal = "Golden"
+        elif prev_ma20 >= prev_ma60 and ma20 < ma60:
+            cross_signal = "Death"
+            
+        # 2. 狀態機邏輯
+        
+        # 如果在觀察期中
+        if current_state == "Golden_Obs":
+            if ma20 > ma60:
+                obs_count += 1
+                if obs_count >= 3:
+                    # 確認成立
+                    current_state = "Golden_Confirmed"
+                    last_confirmed_state = "Golden_Confirmed"
+                    # 記錄交叉點索引 (i-2 是第一天發生的點)
+                    # 觀察期是 T(i-2), T+1(i-1), T+2(i) -> 滿3天 -> 確認
+                    # 交叉日是 T (i-2)
+                    cross_idx = i - 2
+                    if cross_idx >= 0:
+                        confirmed_cross_date = subset.loc[cross_idx]
+                        confirmed_price_range = range(max(0, cross_idx-3), min(len(subset), cross_idx+4))
+            else:
+                # 失敗，回到上一個確認狀態
+                current_state = last_confirmed_state
+                obs_count = 0
+                
+        elif current_state == "Death_Obs":
+            if ma20 < ma60:
+                obs_count += 1
+                if obs_count >= 3:
+                    # 確認成立
+                    current_state = "Death_Confirmed"
+                    last_confirmed_state = "Death_Confirmed"
+                    cross_idx = i - 2
+                    if cross_idx >= 0:
+                        confirmed_cross_date = subset.loc[cross_idx]
+                        confirmed_price_range = range(max(0, cross_idx-3), min(len(subset), cross_idx+4))
+            else:
+                # 失敗
+                current_state = last_confirmed_state
+                obs_count = 0
+                
+        else:
+            # 不在觀察期 (Neutral, Golden_Confirmed, Death_Confirmed)
+            if cross_signal == "Golden":
+                current_state = "Golden_Obs"
+                obs_count = 1 # 當天算第1天
+            elif cross_signal == "Death":
+                current_state = "Death_Obs"
+                obs_count = 1 # 當天算第1天
+                
+    # 輸出結果格式化
+    res = default_res.copy()
+    
+    # 取得日期字串輔助函式
+    def get_date_str(r):
+        if 'date' in r:
+            return pd.to_datetime(r['date']).strftime('%Y/%m/%d')
+        return ""
+
+    if current_state == "Golden_Confirmed":
+        res['state_desc'] = "黃金交叉"
+        if confirmed_cross_date is not None:
+            c_date = get_date_str(confirmed_cross_date)
+            res['state_desc'] += f" ({c_date})"
+            res['cross_date'] = c_date
+            
+            # 計算前後3天最高價
+            if confirmed_price_range:
+                # 檢查索引是否有效
+                valid_indices = [ix for ix in confirmed_price_range if ix < len(subset)]
+                if valid_indices:
+                    max_p = subset.loc[valid_indices, 'max'].max()
+                    res['key_price'] = max_p
+                    res['key_price_desc'] = f"關鍵點前後高點: {max_p}"
+                    
+    elif current_state == "Death_Confirmed":
+        res['state_desc'] = "死亡交叉"
+        if confirmed_cross_date is not None:
+            c_date = get_date_str(confirmed_cross_date)
+            res['state_desc'] += f" ({c_date})"
+            res['cross_date'] = c_date
+            
+            # 計算前後3天最低價
+            if confirmed_price_range:
+                valid_indices = [ix for ix in confirmed_price_range if ix < len(subset)]
+                if valid_indices:
+                    min_p = subset.loc[valid_indices, 'min'].min()
+                    res['key_price'] = min_p
+                    res['key_price_desc'] = f"關鍵點前後低點: {min_p}"
+                    
+    elif current_state == "Golden_Obs":
+        res['state_desc'] = f"黃金交叉觀察中 (第 {obs_count} 天)"
+    elif current_state == "Death_Obs":
+        res['state_desc'] = f"死亡交叉觀察中 (第 {obs_count} 天)"
+        
+    return res
+

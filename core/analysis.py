@@ -81,10 +81,11 @@ def analyze_stock(stock_id, last_revenue_month=None, last_financial_quarter=None
     df = calculate_technical_indicators(df)
     
     # 3. 策略/邏輯運算 (技術面)
-    from core.strategy import analyze_revenue, analyze_financials, analyze_all_inertia, analyze_3day_high_low
+    from core.strategy import analyze_revenue, analyze_financials, analyze_all_inertia, analyze_3day_high_low, analyze_ma_cross
     strategy_result = {} # Empty dict for now, used for passing info to AI
     inertia_result = analyze_all_inertia(df)
     three_day_result = analyze_3day_high_low(df, "日線")
+    ma_cross_result = analyze_ma_cross(df)
     
     # Add info for AI (Simple Version)
     strategy_result['inertia'] = inertia_result
@@ -208,6 +209,10 @@ YoY: {revenue_result['yoy_pct']:.2f}%
         "", # Empty line
         # 3-Day
         fmt_3day(three_day_result, "日線"),
+        "", # Empty line
+        # MA Cross
+        f"MA交叉: {ma_cross_result['state_desc']}",
+        f"   ↳ {ma_cross_result['key_price_desc']}" if ma_cross_result['key_price_desc'] else None,
     ]
     technical_str = "\n".join([line for line in technical_lines if line])
     
@@ -256,7 +261,7 @@ def analyze_index(index_id, index_name):
     分析大盤/櫃買指數 (僅包含基本訊息與技術面)
     """
     from core.data import fetch_stock_data
-    from core.strategy import analyze_all_inertia, analyze_3day_high_low
+    from core.strategy import analyze_all_inertia, analyze_3day_high_low, analyze_ma_cross
     
     # 1. Fetch Data
     df = fetch_stock_data(index_id)
@@ -269,6 +274,7 @@ def analyze_index(index_id, index_name):
     # 3. Strategy
     inertia_result = analyze_all_inertia(df)
     three_day_result = analyze_3day_high_low(df, "日線")
+    ma_cross_result = analyze_ma_cross(df)
     
     # 4. Format Output
     last_row = df.iloc[-1]
@@ -300,6 +306,11 @@ def analyze_index(index_id, index_name):
         return base
 
     tech_lines.append(fmt_3day_simple(three_day_result, "日線"))
+    
+    # MA Cross
+    tech_lines.append(f"MA交叉: {ma_cross_result['state_desc']}")
+    if ma_cross_result['key_price_desc']:
+         tech_lines.append(f"   ↳ {ma_cross_result['key_price_desc']}")
     
     technical_str = "\n".join([line for line in tech_lines if line])
     
