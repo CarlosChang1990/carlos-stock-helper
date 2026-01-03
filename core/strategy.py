@@ -348,29 +348,15 @@ def analyze_all_inertia(df):
     else:
         last_date = pd.to_datetime(df.index[-1])
         
-    # Daily: Always run
-    d_res = analyze_inertia_with_state(df, "日線")
-    d_inertia = d_res['description']
-    
-    w_inertia = None
-    m_inertia = None
-    
     # Weekly: Always run
+    w_inertia = None
     df_w = resample_to_period(df, 'W')
     if len(df_w) >= 2:
         w_res = analyze_inertia_with_state(df_w, "週線")
         w_inertia = w_res['description']
             
-    # Monthly: Always run
-    df_m = resample_to_period(df, 'M') # or 'ME'
-    if len(df_m) >= 2:
-        m_res = analyze_inertia_with_state(df_m, "月線")
-        m_inertia = m_res['description']
-    
     return {
-        'daily': d_inertia,
-        'weekly': w_inertia,
-        'monthly': m_inertia,
+        'weekly': w_inertia
     }
 
 def analyze_3day_high_low(df, time_type="日線"):

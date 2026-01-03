@@ -204,9 +204,7 @@ YoY: {revenue_result['yoy_pct']:.2f}%
 
     technical_lines = [
         # Inertia
-        f"{inertia_result['daily']}",
-        f"{inertia_result['weekly']}" if inertia_result['weekly'] else None,
-        f"{inertia_result['monthly']}" if inertia_result['monthly'] else None,
+        f"{inertia_result['weekly']}" if inertia_result.get('weekly') else None,
         "", # Empty line
         # 3-Day
         fmt_3day(three_day_result, "日線"),
@@ -282,9 +280,7 @@ def analyze_index(index_id, index_name):
     # --- 2. Technical ---
     # Inertia
     tech_lines = [
-        f"{inertia_result['daily']}",
-        f"{inertia_result['weekly']}" if inertia_result['weekly'] else None,
-        f"{inertia_result['monthly']}" if inertia_result['monthly'] else None
+        f"{inertia_result['weekly']}" if inertia_result.get('weekly') else None
     ]
     
     # 3-Day
