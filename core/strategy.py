@@ -516,8 +516,8 @@ def analyze_ma_cross(df):
     
     # 我們需要模擬過去一段時間的狀態變化，為了效能，可以只跑最後 N 天
     # 但為了捕捉"最近一次"確認的交叉，可能需要跑一段
-    # 假設跑最後 60 天
-    subset = df.tail(60).copy().reset_index(drop=True)
+    # 假設跑最後 90 天
+    subset = df.tail(90).copy().reset_index(drop=True)
     
     current_state = "Neutral"
     obs_count = 0
