@@ -182,7 +182,7 @@ YoY: {revenue_result['yoy_pct']:.2f}%
     title_name = f"{stock_id} {stock_name}" if stock_name else stock_id
     
     # --- 1. 基本訊息 ---
-    basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}"
+    basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}\n月線(20MA): {last_row['MA20']:.2f}"
 
     # --- 2. 技術面 ---
     # Helper to format 3-day line
@@ -275,7 +275,7 @@ def analyze_index(index_id, index_name):
     last_date = last_row['date'].strftime('%Y-%m-%d')
     
     # --- 1. Basic Info ---
-    basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}"
+    basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}\n月線(20MA): {last_row['MA20']:.2f}"
     
     # --- 2. Technical ---
     # Inertia
