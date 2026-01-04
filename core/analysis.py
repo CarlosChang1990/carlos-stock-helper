@@ -212,8 +212,10 @@ YoY: {revenue_result['yoy_pct']:.2f}%
         "", # Empty line
         # MA Cross
         f"MA交叉: {ma_cross_result['state_desc']}",
-        f"   ↳ {ma_cross_result['key_price_desc']}" if ma_cross_result['key_price_desc'] else None,
+        f"   ↳ {ma_cross_result['key_price_desc']}" if ma_cross_result.get('key_price_desc') else None,
+        f"   ↳ {ma_cross_result['trigger_desc']}" if ma_cross_result.get('trigger_desc') else None,
     ]
+
     technical_str = "\n".join([line for line in technical_lines if line])
     
     # --- 3. 籌碼面 ---
@@ -309,8 +311,10 @@ def analyze_index(index_id, index_name):
     
     # MA Cross
     tech_lines.append(f"MA交叉: {ma_cross_result['state_desc']}")
-    if ma_cross_result['key_price_desc']:
+    if ma_cross_result.get('key_price_desc'):
          tech_lines.append(f"   ↳ {ma_cross_result['key_price_desc']}")
+    if ma_cross_result.get('trigger_desc'):
+         tech_lines.append(f"   ↳ {ma_cross_result['trigger_desc']}")
     
     technical_str = "\n".join([line for line in tech_lines if line])
     

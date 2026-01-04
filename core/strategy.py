@@ -635,6 +635,48 @@ def analyze_ma_cross(df):
         res['state_desc'] = f"黃金交叉觀察中 (第 {obs_count} 天)"
     elif current_state == "Death_Obs":
         res['state_desc'] = f"死亡交叉觀察中 (第 {obs_count} 天)"
+    
+    # --- 計算明日交叉觸發價 ---
+    # 需要足夠資料: 至少 60 天
+    if len(df) >= 60:
+        last_idx = len(df) - 1
+        
+        # 今日數據
+        today_ma20 = df.loc[last_idx, 'MA20']
+        today_ma60 = df.loc[last_idx, 'MA60']
+        today_close = df.loc[last_idx, 'close']
+        
+        # 明日扣抵值 (會被踢出 MA 計算的舊價格)
+        # MA20 扣抵: T-19 (今天是 last_idx, 所以是 last_idx - 19)
+        # MA60 扣抵: T-59 (今天是 last_idx, 所以是 last_idx - 59)
+        deduct_idx_20 = last_idx - 19
+        deduct_idx_60 = last_idx - 59
+        
+        if deduct_idx_20 >= 0 and deduct_idx_60 >= 0:
+            d20 = df.loc[deduct_idx_20, 'close']
+            d60 = df.loc[deduct_idx_60, 'close']
+            
+            # 交叉臨界價公式:
+            # 設明日收盤 = P
+            # 新MA20 = (今MA20 * 20 - d20 + P) / 20
+            # 新MA60 = (今MA60 * 60 - d60 + P) / 60
+            # 令 新MA20 = 新MA60, 解 P:
+            # P = 30 * (MA60 - MA20) + 1.5 * d20 - 0.5 * d60
+            trigger_price = 30 * (today_ma60 - today_ma20) + 1.5 * d20 - 0.5 * d60
+            
+            # 判斷是否在合理範圍 (±10% of 今日收盤)
+            price_diff_pct = abs(trigger_price - today_close) / today_close * 100
+            
+            if price_diff_pct <= 10:
+                # 判斷方向
+                if today_ma20 < today_ma60:
+                    # 目前月線在季線下方，若收在 trigger_price 以上 -> 黃金交叉
+                    res['trigger_price'] = trigger_price
+                    res['trigger_desc'] = f"⚠️ 黃金交叉觸發價: 明日收盤 > {trigger_price:.2f}"
+                else:
+                    # 目前月線在季線上方，若收在 trigger_price 以下 -> 死亡交叉
+                    res['trigger_price'] = trigger_price
+                    res['trigger_desc'] = f"⚠️ 死亡交叉觸發價: 明日收盤 < {trigger_price:.2f}"
         
     return res
 
