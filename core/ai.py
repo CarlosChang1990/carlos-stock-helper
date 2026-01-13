@@ -9,9 +9,17 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
+# Model fallback list - verified to support Google Search tool
+# gemini-2.5-flash-lite 不支援 Search，已移除
+SEARCH_CAPABLE_MODELS = [
+    "gemini-2.5-flash",   # 主要：支援 Search
+    "gemini-2.0-flash",   # 備援：支援 Search
+]
+
 def search_eps_forecast(stock_id, stock_name):
     """
-    使用 Gemini (v1 SDK) 聯網搜尋法人對該公司的最新 EPS 預估
+    使用 Gemini 聯網搜尋法人對該公司的最新 EPS 預估
+    具備 Model 備援機制：當一個 model 額度用完時，自動切換到下一個
     
     Args:
         stock_id (str): 股票代號
@@ -32,13 +40,7 @@ def search_eps_forecast(stock_id, stock_name):
         client = genai.Client(api_key=api_key)
         
         # Define Tool (Google Search)
-        # In New SDK, simple string or typed config works
-        # types.Tool(google_search=types.GoogleSearch())
-        
         tools = [types.Tool(google_search=types.GoogleSearch())]
-        
-        # Model Name
-        model_name = "gemini-2.5-flash" # Full flash required for Google Search tool
         
         prompt = f"""
 你是一名極簡風格的財務助手。請針對台灣股市代號 {stock_id} ({stock_name}) 進行「法人EPS預估」的聯網搜尋。
@@ -60,13 +62,10 @@ def search_eps_forecast(stock_id, stock_name):
 Source: [工商時報](https://...)
 """
         
-        # Retry logic for Quota (429) errors
-        logger.info(f"Generating EPS forecast search for {stock_id} {stock_name} (Model: {model_name})...")
-        
-        delay = 60
-        retries = 3
-        
-        for attempt in range(retries):
+        # Model fallback mechanism
+        for model_name in SEARCH_CAPABLE_MODELS:
+            logger.info(f"Generating EPS forecast search for {stock_id} {stock_name} (Model: {model_name})...")
+            
             try:
                 # API Call
                 response = client.models.generate_content(
@@ -77,25 +76,31 @@ Source: [工商時報](https://...)
                     )
                 )
                 
-                time.sleep(delay)
+                # Add delay to avoid rate limiting
+                time.sleep(5)
+                
                 if response and response.text:
+                    logger.info(f"EPS search succeeded with model: {model_name}")
                     return response.text.strip()
                 else:
-                    return "無搜尋結果或生成失敗。"
+                    logger.warning(f"Empty response from {model_name}, trying next model...")
+                    continue
                     
             except Exception as e:
                 error_msg = str(e)
-                if "429" in error_msg or "Quota" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                    # Wait time increases: 60s, 120s, 180s...
-                    wait_time = 60 * (attempt + 1)
-                    logger.warning(f"Gemini EPS Search 觸發限額 (429)，等待 {wait_time} 秒後重試 ({attempt + 1}/{retries})...")
-                    time.sleep(wait_time)
+                
+                # Check if quota/rate limit error - try next model
+                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "503" in error_msg or "UNAVAILABLE" in error_msg:
+                    logger.warning(f"Model {model_name} 額度已滿或不可用，切換到下一個 model...")
+                    continue
                 else:
                     # Non-retriable error
-                    logger.error(f"Gemini Search Error (Attempt {attempt+1}): {e}")
+                    logger.error(f"Gemini Search Error ({model_name}): {e}")
                     return f"EPS 搜尋發生錯誤: {e}"
-                    
-        return "EPS 搜尋失敗 (重試多次仍遇限額)"
+        
+        # All models exhausted
+        logger.error("所有備援 model 都無法使用")
+        return "EPS 搜尋失敗 (所有 model 額度已滿)"
             
     except Exception as e:
         logger.error(f"Gemini Search Init Error: {e}")
