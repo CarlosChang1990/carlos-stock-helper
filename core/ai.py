@@ -38,7 +38,7 @@ def search_eps_forecast(stock_id, stock_name):
         tools = [types.Tool(google_search=types.GoogleSearch())]
         
         # Model Name
-        model_name = "gemini-flash-latest" # Stable, efficient, supports search
+        model_name = "gemini-2.5-flash" # Full flash required for Google Search tool
         
         prompt = f"""
 你是一名極簡風格的財務助手。請針對台灣股市代號 {stock_id} ({stock_name}) 進行「法人EPS預估」的聯網搜尋。

@@ -8,7 +8,7 @@ import logging
 from config import FINMIND_API_TOKEN, GEMINI_API_KEY, GOOGLE_SHEET_URL
 from core.sheets import get_service, get_watchlist
 from core.data import DataLoader
-import google.generativeai as genai
+from google import genai
 
 # 配置日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -56,10 +56,17 @@ def test_gemini():
         return False
         
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-3-flash-preview')
-        response = model.generate_content("Hello, this is a connection test.")
-        logger.info(f"Gemini Response: {response.text.strip()}")
+        # Use new generic Client
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        # Use the stable model found in investigation
+        model_name = "gemini-2.5-flash-lite" 
+        
+        response = client.models.generate_content(
+            model=model_name,
+            contents="Hello, this is a connection test."
+        )
+        # Inspect response structure (it returns an object with .text in the new SDK)
+        logger.info(f"Gemini Response: {response.text.strip()[:50]}...")
         return True
     except Exception as e:
         logger.error(f"Gemini Connection Failed: {e}")
