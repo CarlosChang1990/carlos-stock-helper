@@ -1,4 +1,3 @@
-import ta.trend
 from ta.trend import SMAIndicator
 import inspect
 

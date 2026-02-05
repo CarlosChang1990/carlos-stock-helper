@@ -1,10 +1,26 @@
-import pandas as pd
+"""
+Core Analysis Module
+Handles technical analysis, chips analysis, and fundamental analysis integration.
+"""
+from __future__ import annotations
 import logging
+from typing import Optional
+
 from ta.momentum import StochasticOscillator
 from ta.trend import SMAIndicator
 
-# 設定日誌
+from core.data import fetch_stock_data, fetch_monthly_revenue, fetch_financial_statements
+from core.strategy import (
+    analyze_all_inertia, 
+    analyze_3day_high_low, 
+    analyze_ma_cross, 
+    analyze_revenue, 
+    analyze_financials
+)
+from core.chips import fetch_chips_data, analyze_chips_consecutive
+
 logger = logging.getLogger(__name__)
+
 
 def calculate_technical_indicators(df):
     """
@@ -21,7 +37,6 @@ def calculate_technical_indicators(df):
         return df
 
     # 1. 計算移動平均線 (MA)
-    # 使用 ta 套件或 pandas rolling
     
     # MA5 (週線)
     ma5_indicator = SMAIndicator(close=df['close'], n=5)
@@ -53,222 +68,168 @@ def calculate_technical_indicators(df):
     
     return df
 
-def analyze_stock(stock_id, last_revenue_month=None, last_financial_quarter=None, stock_name=None):
+
+def _format_state_with_dates(res: Optional[dict]) -> Optional[str]:
     """
-    整合函式：抓資料 -> 算指標 -> 營收分析 -> 財報分析
+    Format state with dates:
+    State (連N) [First ~ Last]
+    or
+    State [First] (if only 1)
+    """
+    if not res:
+        return None
     
-    Args:
-        stock_id (str): 股票代碼
-        last_revenue_month (str): 上次處理的營收月份
-        last_financial_quarter (str): 上次處理的財報季度 (e.g. "2024-Q3")
-        stock_name (str): 股票名稱
+    state = res.get('state', '')
+    # Filter out neutral states
+    if '盤整' in state or '無訊號' in state:
+        return None
         
+    count = res.get('count', 0)
+    trigger_dates = res.get('trigger_dates', [])
+    
+    date_str = ""
+    if trigger_dates:
+        first = trigger_dates[0]
+        # If count > 1, show range if different
+        if count > 1:
+            last = trigger_dates[-1]
+            if first != last:
+                date_str = f"[{first}~{last}]"
+            else:
+                date_str = f"[{first}]"
+        else:
+            date_str = f"[{first}]"
+            
+    if count > 1:
+        return f"{state} (連{count}) {date_str}"
+    else:
+        return f"{state} {date_str}"
+
+
+def _build_chips_data(stock_id: str) -> Optional[list[dict]]:
+    """Build chips analysis data for Flex Message"""
+    chips_data = None
+    try:
+        df_chips = fetch_chips_data(stock_id)
+        chips_results = analyze_chips_consecutive(df_chips)
+        
+        if chips_results:
+            chips_data = []
+            for key, data in chips_results.items():
+                count = data.get('count', 0)
+                state = data.get('state', '')  # 增加 or 減少 or 無變化
+                label = data.get('label', key)
+                current_value = data.get('current_value', 0)
+                
+                # Shorten label for display
+                short_label = label
+                if '400張大戶持股比' in label:
+                    short_label = '400張大戶'
+                elif '1000張大戶持股比' in label:
+                    short_label = '千張大戶'
+                
+                # Format based on type
+                if 'Pct' in key:
+                    value_str = f"{current_value:.1f}%"
+                else:
+                    value_str = f"{int(current_value):,}"
+                
+                # Format state description
+                if count > 0:
+                    state_desc = f"({state} 連{count}週)"
+                else:
+                    state_desc = "(持平)"
+                
+                chips_data.append({
+                    'name': short_label,
+                    'desc': f"{value_str} {state_desc}"
+                })
+    except Exception as e:
+        logger.error(f"籌碼分析失敗 (Flex): {e}")
+        
+    return chips_data
+
+
+def _build_fundamental_data(
+    stock_id: str, 
+    last_revenue_month: Optional[str], 
+    last_financial_quarter: Optional[str]
+) -> tuple[Optional[str], Optional[dict], Optional[dict]]:
+    """
+    Build fundamental analysis string and updates
+    
     Returns:
-        dict: {
-            'report': str,
-            'revenue_update': dict or None,
-            'financial_update': dict or None
-        }
+        (fundamental_str, revenue_update, financial_update)
     """
-    from core.data import fetch_stock_data, fetch_monthly_revenue, fetch_financial_statements
-    
-    # 1. 抓資料 (日線)
-    df = fetch_stock_data(stock_id)
-    if df.empty:
-        return {'report': f"股票 {stock_id} 抓取日線資料失敗。", 'revenue_update': None, 'financial_update': None}
-        
-    # 2. 算指標
-    df = calculate_technical_indicators(df)
-    
-    # 3. 策略/邏輯運算 (技術面)
-    from core.strategy import analyze_revenue, analyze_financials, analyze_all_inertia, analyze_3day_high_low, analyze_ma_cross
-    strategy_result = {} # Empty dict for now, used for passing info to AI
-    inertia_result = analyze_all_inertia(df)
-    three_day_result = analyze_3day_high_low(df, "日線")
-    ma_cross_result = analyze_ma_cross(df)
-    
-    # Add info for AI (Simple Version)
-    strategy_result['inertia'] = inertia_result
-    strategy_result['three_day'] = three_day_result['state']
-    
-    # 4. 營收分析
-    from core.ai import search_eps_forecast
-    
-    revenue_info = None
-    revenue_report_str = ""
+    fundamental_parts = []
     revenue_update = None
+    financial_update = None
     
+    # 1. Revenue
     try:
         df_rev = fetch_monthly_revenue(stock_id)
         revenue_result = analyze_revenue(df_rev, last_revenue_month)
         
         if revenue_result:
-            # 偵測到新營收
-            rev_val = revenue_result['revenue'] / 100000000 # 轉成億
+            rev_val = revenue_result['revenue'] / 100000000  # 轉成億
+            fundamental_parts.append(
+                f"📊 營收 {revenue_result['year']}-{revenue_result['month']}: {rev_val:.2f}億\n"
+                f"MoM: {revenue_result['mom_pct']:+.1f}% | YoY: {revenue_result['yoy_pct']:+.1f}%"
+            )
+            if revenue_result.get('high_status'):
+                fundamental_parts[-1] += f"\n{revenue_result['high_status']}"
             
-            # Trigger EPS Search via Gemini
-            eps_forecast_str = search_eps_forecast(stock_id, stock_name)
-            
-            revenue_report_str = f"""
-【最新月營收公布】({revenue_result['year']}-{revenue_result['month']})
-金額: {rev_val:.2f} 億
-MoM: {revenue_result['mom_pct']:.2f}%
-YoY: {revenue_result['yoy_pct']:.2f}%
-{revenue_result['high_status'] if revenue_result['high_status'] else ''}
-
-{eps_forecast_str}
-"""
             revenue_update = {
                 'id': stock_id,
                 'date_str': revenue_result['date_str']
             }
-            
-            # 將營收資訊加入策略結果供 AI 參考
-            strategy_result['revenue_note'] = f"公布最新月營收 {rev_val:.2f}億. 法人預估: {eps_forecast_str}"
-
     except Exception as e:
-        # Import error fallback if core.ai fails or other issues
-        logger.error(f"營收分析失敗: {e}")
-        
-    # 5. 財報分析
-    fin_report_str = ""
-    fin_update = None
+        logger.error(f"營收分析失敗 (Flex): {e}")
     
+    # 2. Financial Statements
     try:
         df_fin = fetch_financial_statements(stock_id)
         fin_result = analyze_financials(df_fin, last_financial_quarter)
         
         if fin_result:
-             fin_report_str = f"""
-【最新季報公布】({fin_result['quarter_str']})
-毛利率: {fin_result['gm']:.2f}% (QoQ {fin_result['gm_qoq']:+.2f}%, YoY {fin_result['gm_yoy']:+.2f}%)
-營益率: {fin_result['om']:.2f}% (QoQ {fin_result['om_qoq']:+.2f}%, YoY {fin_result['om_yoy']:+.2f}%)
-淨利率: {fin_result['nm']:.2f}% (QoQ {fin_result['nm_qoq']:+.2f}%, YoY {fin_result['nm_yoy']:+.2f}%)
-
-[EPS]
-單季: {fin_result['eps']:.2f} 元 (QoQ {fin_result['eps_qoq']:+.2f}%, YoY {fin_result['eps_yoy']:+.2f}%)
-累計: {fin_result['eps_ytd']:.2f} 元 (YoY {fin_result['eps_ytd_growth']:+.2f}%)
-"""
-             fin_update = {
-                 'id': stock_id,
-                 'quarter_str': fin_result['quarter_str']
-             }
-             
-             strategy_result['financial_note'] = f"公布 {fin_result['quarter_str']} 財報: 單季EPS {fin_result['eps']:.2f}, 累計EPS {fin_result['eps_ytd']:.2f} (YoY {fin_result['eps_ytd_growth']:.2f}%)"
-             
+            fundamental_parts.append(
+                f"📈 季報 {fin_result['quarter_str']}\n"
+                f"毛利率: {fin_result['gm']:.1f}% | 營益率: {fin_result['om']:.1f}%\n"
+                f"EPS: {fin_result['eps']:.2f}元 (YoY {fin_result['eps_yoy']:+.1f}%)"
+            )
+            financial_update = {
+                'id': stock_id,
+                'quarter_str': fin_result['quarter_str']
+            }
     except Exception as e:
-        logger.error(f"財報分析失敗: {e}")
-
-    # 6. 籌碼面分析 (週更)
-    from core.chips import fetch_chips_data, analyze_chips_consecutive, format_chips_report
-    chips_report_str = ""
-    try:
-        # Check if today is Monday (0) to reduce load? Or run always?
-        # User requested "First trading day of week".
-        # Let's run it always so the latest info is always visible, or restrict if performance issue.
-        # Scraping is external, might be slow (2-3s).
-        # Let's add a condition: Run if Monday OR if we haven't seen this week's data?
-        # Simpler: Run always.
-        df_chips = fetch_chips_data(stock_id)
-        chips_results = analyze_chips_consecutive(df_chips)
-        chips_report_str = format_chips_report(chips_results)
-    except Exception as e:
-        logger.error(f"籌碼分析失敗: {e}")
-        chips_report_str = ""
-
-    # 7. 格式化輸出
-    last_row = df.iloc[-1]
-    last_date = last_row['date'].strftime('%Y-%m-%d')
+        logger.error(f"財報分析失敗 (Flex): {e}")
     
-    title_name = f"{stock_id} {stock_name}" if stock_name else stock_id
-    
-    # --- 1. 基本訊息 ---
-    basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}\n月線(20MA): {last_row['MA20']:.2f}"
+    fundamental_str = "\n".join(fundamental_parts) if fundamental_parts else None
+    return fundamental_str, revenue_update, financial_update
 
-    # --- 2. 技術面 ---
-    # Helper to format 3-day line
-    def fmt_3day(res, label):
-        if not res: return None
-        base = f"{label}狀態: {res['state']}"
-        if res.get('count', 0) > 0:
-             dates = res.get('trigger_dates', [])
-             dates_str = f"[{', '.join(dates)}]" if dates else ""
-             if res['count'] > 1:
-                 base += f" (連{res['count']}) {dates_str}"
-             else:
-                 base += f" {dates_str}"
-        
-        # Start new line for Zone description if any
-        if 'description' in res and "最新" in res['description']: # Check if zone description exists
-             base += f"\n   ↳ {res['description']}"
-        return base
 
-    technical_lines = [
-        # Inertia
-        f"{inertia_result['weekly']}" if inertia_result.get('weekly') else None,
-        "", # Empty line
-        # 3-Day
-        fmt_3day(three_day_result, "日線"),
-        "", # Empty line
-        # MA Cross
-        f"MA交叉: {ma_cross_result['state_desc']}",
-        f"   ↳ {ma_cross_result['key_price_desc']}" if ma_cross_result.get('key_price_desc') else None,
-        f"   ↳ {ma_cross_result['trigger_desc']}" if ma_cross_result.get('trigger_desc') else None,
-    ]
-
-    technical_str = "\n".join([line for line in technical_lines if line])
-    
-    # --- 3. 籌碼面 ---
-    chips_section_str = ""
-    if chips_report_str and 'chips_results' in locals() and chips_results:
-        # Get date from results
-        latest_date = list(chips_results.values())[0]['date_str']
-        fmt_date = f"{latest_date[:4]}/{latest_date[4:6]}/{latest_date[6:]}"
-        chips_section_str = f"[籌碼面] ({fmt_date})\n{chips_report_str.strip()}"
-    elif chips_report_str:
-        chips_section_str = f"[籌碼面]\n{chips_report_str.strip()}"
-    else:
-        chips_section_str = f"[籌碼面]\n無籌碼資料"
-
-    # --- 4. 基本面 ---
-    # Combine Revenue and Financials
-    fundamental_lines = []
-    if revenue_report_str.strip():
-        # Remove extra newlines for cleaner density
-        fundamental_lines.append(revenue_report_str.strip())
-    
-    if fin_report_str.strip():
-        fundamental_lines.append(fin_report_str.strip())
-        
-    fundamental_str = "\n\n".join(fundamental_lines) if fundamental_lines else "無近期基本面更新"
-    
-    output = f"""
-【{title_name} 分析報告】({last_date})
-
-{basic_info_str}
-
-[技術面]
-{technical_str}
-
-{chips_section_str}
-
-[基本面]
-{fundamental_str}
-----------------------
-"""
-    return {'report': output, 'revenue_update': revenue_update, 'financial_update': fin_update}
-
-def analyze_index(index_id, index_name):
+def analyze_stock_for_flex(
+    stock_id: str, 
+    stock_name: Optional[str] = None, 
+    last_revenue_month: Optional[str] = None, 
+    last_financial_quarter: Optional[str] = None
+) -> Optional[dict]:
     """
-    分析大盤/櫃買指數 (僅包含基本訊息與技術面)
-    """
-    from core.data import fetch_stock_data
-    from core.strategy import analyze_all_inertia, analyze_3day_high_low, analyze_ma_cross
+    分析股票並回傳結構化資料供 Flex Message 使用
     
+    Args:
+        stock_id: 股票代碼
+        stock_name: 股票名稱
+        last_revenue_month: 上次處理的營收月份
+        last_financial_quarter: 上次處理的財報季度
+    
+    Returns:
+        dict: Flex Message 所需的資料結構
+    """
     # 1. Fetch Data
-    df = fetch_stock_data(index_id)
+    df = fetch_stock_data(stock_id)
     if df.empty:
-        return f"【{index_name}】無法取得資料"
+        return None
         
     # 2. Calc Tech
     df = calculate_technical_indicators(df)
@@ -278,53 +239,104 @@ def analyze_index(index_id, index_name):
     three_day_result = analyze_3day_high_low(df, "日線")
     ma_cross_result = analyze_ma_cross(df)
     
-    # 4. Format Output
+    # Format Inertia (Weekly + Daily)
+    inertia_parts = []
+    
+    # Weekly
+    weekly_str = _format_state_with_dates(inertia_result.get('weekly_res'))
+    if weekly_str:
+        inertia_parts.append(f"週線: {weekly_str}")
+        
+    # Daily
+    daily_str = _format_state_with_dates(inertia_result.get('daily_res'))
+    if daily_str:
+        inertia_parts.append(f"日線慣性: {daily_str}")
+        
+    final_inertia_str = "\n".join(inertia_parts) if inertia_parts else None
+    
+    # 4. Last row data
     last_row = df.iloc[-1]
     last_date = last_row['date'].strftime('%Y-%m-%d')
     
-    # --- 1. Basic Info ---
-    basic_info_str = f"[基本訊息]\n收盤價: {last_row['close']}\n月線(20MA): {last_row['MA20']:.2f}"
+    # 5. Chips analysis
+    chips_data = _build_chips_data(stock_id)
     
-    # --- 2. Technical ---
-    # Inertia
-    tech_lines = [
-        f"{inertia_result['weekly']}" if inertia_result.get('weekly') else None
-    ]
+    # 6. Fundamental analysis
+    fundamental_str, revenue_update, financial_update = _build_fundamental_data(
+        stock_id, last_revenue_month, last_financial_quarter
+    )
     
-    # 3-Day
-    # 3-Day
-    def fmt_3day_simple(res, label):
-        if not res: return None
-        base = f"{label}狀態: {res['state']}"
-        if res.get('count', 0) > 0:
-             # Index report usually simpler, maybe keep trigger dates?
-             dates = res.get('trigger_dates', [])
-             dates_str = f"[{dates[-1]}]" if dates else "" # Show last date only for simplicity? Or full. Let's keep full.
-             if res['count'] > 1:
-                 base += f" (連{res['count']})"
-             # Index report: keep concise.
-        if 'description' in res and "最新" in res['description']:
-            base += f"\n   ↳ {res['description']}"
-        return base
+    # 7. Build result
+    result = {
+        'stock_id': stock_id,
+        'stock_name': stock_name or stock_id,
+        'date_str': last_date,
+        'close_price': float(last_row['close']),
+        'ma20': float(last_row['MA20']),
+        'inertia_str': final_inertia_str,
+        'three_day_str': _format_state_with_dates(three_day_result) if three_day_result else None,
+        'three_day_zone': three_day_result.get('description') if three_day_result and '最新' in three_day_result.get('description', '') else None,
+        'ma_cross_str': ma_cross_result.get('state_desc') if ma_cross_result else None,
+        'ma_cross_key_price': ma_cross_result.get('key_price_desc') if ma_cross_result else None,
+        'chips_data': chips_data,
+        'fundamental_str': fundamental_str,
+        'revenue_update': revenue_update,
+        'financial_update': financial_update,
+    }
+    
+    return result
 
-    tech_lines.append(fmt_3day_simple(three_day_result, "日線"))
-    
-    # MA Cross
-    tech_lines.append(f"MA交叉: {ma_cross_result['state_desc']}")
-    if ma_cross_result.get('key_price_desc'):
-         tech_lines.append(f"   ↳ {ma_cross_result['key_price_desc']}")
-    if ma_cross_result.get('trigger_desc'):
-         tech_lines.append(f"   ↳ {ma_cross_result['trigger_desc']}")
-    
-    technical_str = "\n".join([line for line in tech_lines if line])
-    
-    output = f"""
-【{index_name} ({index_id})】({last_date})
 
-{basic_info_str}
-
-[技術面]
-{technical_str}
----------------------------
-"""
-    return output.strip()
+def analyze_index_for_flex(index_id: str, index_name: str) -> Optional[dict]:
+    """
+    分析指數並回傳結構化資料供 Flex Message 使用
+    
+    Returns:
+        dict: Same structure as analyze_stock_for_flex but without chips_data
+    """
+    # 1. Fetch Data
+    df = fetch_stock_data(index_id)
+    if df.empty:
+        return None
+        
+    # 2. Calc Tech
+    df = calculate_technical_indicators(df)
+    
+    # 3. Strategy
+    inertia_result = analyze_all_inertia(df)
+    three_day_result = analyze_3day_high_low(df, "日線")
+    ma_cross_result = analyze_ma_cross(df)
+    
+    # Format Inertia
+    inertia_parts = []
+    
+    # Weekly
+    weekly_str = _format_state_with_dates(inertia_result.get('weekly_res'))
+    if weekly_str:
+        inertia_parts.append(f"週線: {weekly_str}")
+        
+    # Daily
+    daily_str = _format_state_with_dates(inertia_result.get('daily_res'))
+    if daily_str:
+        inertia_parts.append(f"日線慣性: {daily_str}")
+        
+    final_inertia_str = "\n".join(inertia_parts) if inertia_parts else None
+    
+    # 4. Last row data
+    last_row = df.iloc[-1]
+    last_date = last_row['date'].strftime('%Y-%m-%d')
+    
+    # 5. Build result
+    result = {
+        'index_id': index_id,
+        'index_name': index_name,
+        'date_str': last_date,
+        'close_price': float(last_row['close']),
+        'ma20': float(last_row['MA20']),
+        'inertia_str': final_inertia_str,
+        'three_day_str': _format_state_with_dates(three_day_result) if three_day_result else None,
+        'three_day_zone': three_day_result.get('description') if three_day_result and '最新' in three_day_result.get('description', '') else None,
+        'ma_cross_str': ma_cross_result.get('state_desc') if ma_cross_result else None,
+    }
+    
+    return result

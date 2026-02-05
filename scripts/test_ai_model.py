@@ -6,7 +6,6 @@ import logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from core.ai import search_eps_forecast
-from core.sheets import get_watchlist_details
 
 # Logging Config
 logging.basicConfig(level=logging.INFO)

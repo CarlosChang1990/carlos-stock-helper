@@ -1,3 +1,4 @@
+from __future__ import annotations
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from config import GOOGLE_SHEETS_CREDENTIALS_FILE, GOOGLE_SHEET_URL
@@ -208,3 +209,101 @@ def update_stock_name_cell(row_idx, name):
         
     except Exception as e:
         logger.error(f"更新股票名稱失敗: {e}")
+
+
+def clear_watchlist() -> bool:
+    """
+    清空觀察名單 (保留標題列)
+    
+    Returns:
+        bool: 成功回傳 True，失敗回傳 False
+    """
+    try:
+        client = get_service()
+        if not GOOGLE_SHEET_URL:
+            raise ValueError("未設定 GOOGLE_SHEET_URL")
+            
+        sheet = client.open_by_url(GOOGLE_SHEET_URL).sheet1
+        
+        # Get current row count
+        all_values = sheet.get_all_values()
+        row_count = len(all_values)
+        
+        if row_count <= 1:
+            # Only header or empty, nothing to clear
+            logger.info("觀察名單已經是空的")
+            return True
+        
+        # Delete rows from row 2 to the end (keep header at row 1)
+        # Delete in reverse order to avoid index shifting issues
+        for row_idx in range(row_count, 1, -1):
+            sheet.delete_rows(row_idx)
+        
+        logger.info(f"已清空觀察名單 ({row_count - 1} 筆)")
+        return True
+        
+    except Exception as e:
+        logger.error(f"清空觀察名單失敗: {e}")
+        return False
+
+
+def replace_watchlist(stock_list: list[dict]) -> bool:
+    """
+    批次替換整個觀察名單
+    
+    Args:
+        stock_list (list[dict]): 新的股票列表
+            格式: [{'id': '2330', 'name': '台積電', 'last_revenue_month': '2024-12', 'last_financial_quarter': '2024-Q3'}, ...]
+    
+    Returns:
+        bool: 成功回傳 True，失敗回傳 False
+    """
+    try:
+        client = get_service()
+        if not GOOGLE_SHEET_URL:
+            raise ValueError("未設定 GOOGLE_SHEET_URL")
+            
+        sheet = client.open_by_url(GOOGLE_SHEET_URL).sheet1
+        
+        # 1. Clear existing data (keep header)
+        all_values = sheet.get_all_values()
+        row_count = len(all_values)
+        
+        if row_count > 1:
+            # Batch delete is more efficient
+            # Clear rows 2 to end
+            end_row = row_count
+            # Use batch clear for the data range (A2:D{end})
+            range_to_clear = f"A2:D{end_row}"
+            sheet.batch_clear([range_to_clear])
+            logger.info(f"已清除舊資料 ({row_count - 1} 筆)")
+        
+        if not stock_list:
+            logger.info("新股票列表為空，不新增任何資料")
+            return True
+        
+        # 2. Prepare new data rows
+        new_rows = []
+        for stock in stock_list:
+            row = [
+                stock.get('id', ''),
+                stock.get('name', ''),
+                stock.get('last_revenue_month', ''),
+                stock.get('last_financial_quarter', '')
+            ]
+            new_rows.append(row)
+        
+        # 3. Batch append new rows
+        if new_rows:
+            # Use update instead of append for better control
+            # Start from row 2 (after header)
+            start_cell = "A2"
+            sheet.update(start_cell, new_rows)
+            logger.info(f"已新增 {len(new_rows)} 筆股票到觀察名單")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"替換觀察名單失敗: {e}")
+        return False
+

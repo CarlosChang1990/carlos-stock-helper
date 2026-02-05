@@ -1,7 +1,6 @@
 import requests
 import pandas as pd
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +183,10 @@ def analyze_chips_consecutive(df):
                 d = row_later.get(col, 0) - row_earlier.get(col, 0)
                 
                 hist_state = "無變化"
-                if d > 0: hist_state = "增加"
-                elif d < 0: hist_state = "減少"
+                if d > 0:
+                    hist_state = "增加"
+                elif d < 0:
+                    hist_state = "減少"
                 
                 if hist_state == state:
                     count += 1
@@ -215,13 +216,14 @@ def format_chips_report(results):
     lines = []
     # Get Date from one of the metrics
     latest_date = list(results.values())[0]['date_str']
-    formatted_date = f"{latest_date[:4]}/{latest_date[4:6]}/{latest_date[6:]}" # YYYY/MM/DD
+    f"{latest_date[:4]}/{latest_date[4:6]}/{latest_date[6:]}" # YYYY/MM/DD
     
     # lines.append(f"【籌碼面分析】({formatted_date})") # Removed header to let analysis.py handle it
 
     
     for key in ['TotalShareholders', 'BigHand400_Pct', 'BigHand1000_Pct']:
-        if key not in results: continue
+        if key not in results:
+            continue
         
         res = results[key]
         val_fmt = f"{int(res['current_value']):,}" if key == 'TotalShareholders' else f"{res['current_value']:.2f}%"

@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logging
 from config import FINMIND_API_TOKEN, GEMINI_API_KEY, GOOGLE_SHEET_URL
-from core.sheets import get_service, get_watchlist
+from core.sheets import get_service
 from core.data import DataLoader
 from google import genai
 

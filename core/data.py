@@ -1,6 +1,7 @@
 import pandas as pd
 from FinMind.data import DataLoader
 from datetime import datetime, timedelta
+from typing import Optional
 from config import FINMIND_API_TOKEN
 import logging
 
@@ -131,3 +132,97 @@ def fetch_financial_statements(stock_id, years=3):
         return pd.DataFrame()
 
 
+def get_latest_revenue_month(stock_id: str) -> Optional[str]:
+    """
+    查詢股票最新公布的營收月份
+    
+    Args:
+        stock_id (str): 股票代碼
+        
+    Returns:
+        Optional[str]: 最新營收月份，例如 '2024-12'，如果查無資料回傳 None
+    """
+    try:
+        df_rev = fetch_monthly_revenue(stock_id, years=1)
+        
+        if df_rev.empty:
+            logger.warning(f"查無 {stock_id} 營收資料")
+            return None
+        
+        # Sort by date descending and get the latest
+        df_rev = df_rev.sort_values('date', ascending=False)
+        latest = df_rev.iloc[0]
+        
+        # Extract year and month from the 'date' column or 'revenue_year'/'revenue_month'
+        if 'revenue_year' in df_rev.columns and 'revenue_month' in df_rev.columns:
+            year = int(latest['revenue_year'])
+            month = int(latest['revenue_month'])
+        else:
+            # Fallback: parse from date
+            date_val = pd.to_datetime(latest['date'])
+            year = date_val.year
+            month = date_val.month
+        
+        revenue_month_str = f"{year}-{month:02d}"
+        logger.info(f"{stock_id} 最新營收月份: {revenue_month_str}")
+        return revenue_month_str
+        
+    except Exception as e:
+        logger.error(f"查詢最新營收月份失敗 {stock_id}: {e}")
+        return None
+
+
+def get_latest_financial_quarter(stock_id: str) -> Optional[str]:
+    """
+    查詢股票最新公布的財報季度
+    
+    Args:
+        stock_id (str): 股票代碼
+        
+    Returns:
+        Optional[str]: 最新財報季度，例如 '2024-Q3'，如果查無資料回傳 None
+    """
+    try:
+        df_fin = fetch_financial_statements(stock_id, years=2)
+        
+        if df_fin.empty:
+            logger.warning(f"查無 {stock_id} 財報資料")
+            return None
+        
+        # Financial statements usually have 'date' column in format like '2024-09-30'
+        # Quarter is determined by the month: Q1=3, Q2=6, Q3=9, Q4=12
+        df_fin['date'] = pd.to_datetime(df_fin['date'])
+        df_fin = df_fin.sort_values('date', ascending=False)
+        
+        # Get unique dates (each quarter has multiple financial statement items)
+        unique_dates = df_fin['date'].drop_duplicates().sort_values(ascending=False)
+        
+        if unique_dates.empty:
+            return None
+            
+        latest_date = unique_dates.iloc[0]
+        year = latest_date.year
+        month = latest_date.month
+        
+        # Map month to quarter
+        quarter_map = {3: 'Q1', 6: 'Q2', 9: 'Q3', 12: 'Q4'}
+        quarter = quarter_map.get(month)
+        
+        if not quarter:
+            # Fallback: approximate quarter
+            if month <= 3:
+                quarter = 'Q1'
+            elif month <= 6:
+                quarter = 'Q2'
+            elif month <= 9:
+                quarter = 'Q3'
+            else:
+                quarter = 'Q4'
+        
+        quarter_str = f"{year}-{quarter}"
+        logger.info(f"{stock_id} 最新財報季度: {quarter_str}")
+        return quarter_str
+        
+    except Exception as e:
+        logger.error(f"查詢最新財報季度失敗 {stock_id}: {e}")
+        return None

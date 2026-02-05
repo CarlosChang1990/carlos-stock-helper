@@ -1,7 +1,6 @@
 import logging
 import sys
 import os
-import pandas as pd
 from FinMind.data import DataLoader
 
 # Add project root to sys.path
