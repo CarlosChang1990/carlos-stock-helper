@@ -14,6 +14,7 @@ def build_stock_bubble(
     stock_name: str,
     date_str: str,
     close_price: float,
+    price_change: float,
     ma20: float,
     inertia_str: Optional[str] = None,
     three_day_str: Optional[str] = None,
@@ -71,17 +72,36 @@ def build_stock_bubble(
     body_contents = []
     
     # 基本訊息區
-    price_color = "#00C853" if close_price >= ma20 else "#FF5252"
+    if price_change > 0:
+        price_color = "#FF5252" # 紅色 (上漲)
+        change_str = f"▲{price_change:.2f}"
+    elif price_change < 0:
+        price_color = "#00C853" # 綠色 (下跌)
+        change_str = f"▼{abs(price_change):.2f}"
+    else:
+        price_color = "#FFFFFF" # 白色 (平盤)
+        change_str = "-"
+
+    price_text = f"{close_price:.2f} {change_str}"
+
     body_contents.append({
         "type": "box",
         "layout": "horizontal",
         "contents": [
             {"type": "text", "text": "收盤", "size": "sm", "color": "#888888", "flex": 2},
-            {"type": "text", "text": f"{close_price:.2f}", "size": "sm", "color": price_color, "flex": 3, "align": "end"},
-            {"type": "text", "text": "月線", "size": "sm", "color": "#888888", "flex": 2},
-            {"type": "text", "text": f"{ma20:.2f}", "size": "sm", "color": "#FFFFFF", "flex": 3, "align": "end"},
+            {"type": "text", "text": price_text, "size": "sm", "color": price_color, "flex": 10, "align": "end", "wrap": True},
         ],
         "margin": "md"
+    })
+    
+    body_contents.append({
+        "type": "box",
+        "layout": "horizontal",
+        "contents": [
+            {"type": "text", "text": "月線", "size": "sm", "color": "#888888", "flex": 2},
+            {"type": "text", "text": f"{ma20:.2f}", "size": "sm", "color": "#FFFFFF", "flex": 10, "align": "end"},
+        ],
+        "margin": "sm"
     })
     
     # 分隔線
@@ -215,6 +235,7 @@ def build_index_bubble(
     index_name: str,
     date_str: str,
     close_price: float,
+    price_change: float,
     ma20: float,
     inertia_str: Optional[str] = None,
     three_day_str: Optional[str] = None,
@@ -252,17 +273,36 @@ def build_index_bubble(
     body_contents = []
     
     # 基本訊息
-    price_color = "#00C853" if close_price >= ma20 else "#FF5252"
+    if price_change > 0:
+        price_color = "#FF5252"
+        change_str = f"▲{price_change:.2f}"
+    elif price_change < 0:
+        price_color = "#00C853"
+        change_str = f"▼{abs(price_change):.2f}"
+    else:
+        price_color = "#FFFFFF"
+        change_str = "-"
+
+    price_text = f"{close_price:.2f} {change_str}"
+
     body_contents.append({
         "type": "box",
         "layout": "horizontal",
         "contents": [
             {"type": "text", "text": "收盤", "size": "sm", "color": "#888888", "flex": 2},
-            {"type": "text", "text": f"{close_price:.2f}", "size": "sm", "color": price_color, "flex": 3, "align": "end"},
-            {"type": "text", "text": "月線", "size": "sm", "color": "#888888", "flex": 2},
-            {"type": "text", "text": f"{ma20:.2f}", "size": "sm", "color": "#FFFFFF", "flex": 3, "align": "end"},
+            {"type": "text", "text": price_text, "size": "sm", "color": price_color, "flex": 10, "align": "end", "wrap": True},
         ],
         "margin": "md"
+    })
+    
+    body_contents.append({
+        "type": "box",
+        "layout": "horizontal",
+        "contents": [
+            {"type": "text", "text": "月線", "size": "sm", "color": "#888888", "flex": 2},
+            {"type": "text", "text": f"{ma20:.2f}", "size": "sm", "color": "#FFFFFF", "flex": 10, "align": "end"},
+        ],
+        "margin": "sm"
     })
     
     body_contents.append({"type": "separator", "margin": "lg"})

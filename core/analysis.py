@@ -178,11 +178,15 @@ def _build_fundamental_data(
             )
             if revenue_result.get('high_status'):
                 fundamental_parts[-1] += f"\n{revenue_result['high_status']}"
+                
+            if revenue_result.get('sparkline'):
+                fundamental_parts.append(f"近12月趨勢: {revenue_result['sparkline']}")
             
-            revenue_update = {
-                'id': stock_id,
-                'date_str': revenue_result['date_str']
-            }
+            if revenue_result.get('is_new'):
+                revenue_update = {
+                    'id': stock_id,
+                    'date_str': revenue_result['date_str']
+                }
     except Exception as e:
         logger.error(f"營收分析失敗 (Flex): {e}")
     
@@ -192,15 +196,26 @@ def _build_fundamental_data(
         fin_result = analyze_financials(df_fin, last_financial_quarter)
         
         if fin_result:
-            fundamental_parts.append(
+            # 最新一季總結
+            fin_str = (
                 f"📈 季報 {fin_result['quarter_str']}\n"
                 f"毛利率: {fin_result['gm']:.1f}% | 營益率: {fin_result['om']:.1f}%\n"
-                f"EPS: {fin_result['eps']:.2f}元 (YoY {fin_result['eps_yoy']:+.1f}%)"
+                f"EPS: {fin_result['eps']:.2f}元 (YoY {fin_result['eps_yoy']:+.1f}%)\n"
+                f"--- 近四季 ---"
             )
-            financial_update = {
-                'id': stock_id,
-                'quarter_str': fin_result['quarter_str']
-            }
+            
+            # 近四季列表
+            last_4 = fin_result.get('last_4_data', [])
+            for q_data in last_4:
+                fin_str += f"\n{q_data['quarter_str']}: EPS {q_data['eps']:.2f} | 營益 {q_data['om']:.1f}%"
+                
+            fundamental_parts.append(fin_str)
+            
+            if fin_result.get('is_new'):
+                financial_update = {
+                    'id': stock_id,
+                    'quarter_str': fin_result['quarter_str']
+                }
     except Exception as e:
         logger.error(f"財報分析失敗 (Flex): {e}")
     
@@ -255,8 +270,17 @@ def analyze_stock_for_flex(
     final_inertia_str = "\n".join(inertia_parts) if inertia_parts else None
     
     # 4. Last row data
-    last_row = df.iloc[-1]
+    if len(df) >= 2:
+        last_row = df.iloc[-1]
+        yesterday_row = df.iloc[-2]
+        yesterday_close = float(yesterday_row['close'])
+    else:
+        last_row = df.iloc[-1]
+        yesterday_close = float(last_row['close'])
+        
     last_date = last_row['date'].strftime('%Y-%m-%d')
+    close_price = float(last_row['close'])
+    price_change = close_price - yesterday_close
     
     # 5. Chips analysis
     chips_data = _build_chips_data(stock_id)
@@ -271,7 +295,8 @@ def analyze_stock_for_flex(
         'stock_id': stock_id,
         'stock_name': stock_name or stock_id,
         'date_str': last_date,
-        'close_price': float(last_row['close']),
+        'close_price': close_price,
+        'price_change': price_change,
         'ma20': float(last_row['MA20']),
         'inertia_str': final_inertia_str,
         'three_day_str': _format_state_with_dates(three_day_result) if three_day_result else None,
@@ -323,15 +348,25 @@ def analyze_index_for_flex(index_id: str, index_name: str) -> Optional[dict]:
     final_inertia_str = "\n".join(inertia_parts) if inertia_parts else None
     
     # 4. Last row data
-    last_row = df.iloc[-1]
+    if len(df) >= 2:
+        last_row = df.iloc[-1]
+        yesterday_row = df.iloc[-2]
+        yesterday_close = float(yesterday_row['close'])
+    else:
+        last_row = df.iloc[-1]
+        yesterday_close = float(last_row['close'])
+        
     last_date = last_row['date'].strftime('%Y-%m-%d')
+    close_price = float(last_row['close'])
+    price_change = close_price - yesterday_close
     
     # 5. Build result
     result = {
         'index_id': index_id,
         'index_name': index_name,
         'date_str': last_date,
-        'close_price': float(last_row['close']),
+        'close_price': close_price,
+        'price_change': price_change,
         'ma20': float(last_row['MA20']),
         'inertia_str': final_inertia_str,
         'three_day_str': _format_state_with_dates(three_day_result) if three_day_result else None,

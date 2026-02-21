@@ -1,7 +1,44 @@
 import pandas as pd
 import logging
+from typing import List
 
 logger = logging.getLogger(__name__)
+
+def generate_sparkline(values: List[float]) -> str:
+    """
+    將數值列表轉換為 Unicode Sparkline，遇到 None 補空白字元。
+    """
+    if not values:
+        return ""
+    
+    # 找出有效數值來定義區間
+    valid_vals = [v for v in values if pd.notna(v) and v is not None]
+    if not valid_vals:
+        return " " * len(values)
+        
+    # Unicode blocks (8 levels), all visible
+    chars = " ▂▃▄▅▆▇█"
+    min_val = min(valid_vals)
+    max_val = max(valid_vals)
+    
+    # 如果最大最小值一樣（比如數值全相同），或者只有一個有效值
+    span = max_val - min_val if max_val > min_val else 1
+    sparkline = ""
+    
+    for val in values:
+        if pd.isna(val) or val is None:
+            # 缺失值對應空白
+            sparkline += " "
+        else:
+            # 計算相對位置比例
+            ratio = (val - min_val) / span
+            # 對應到 1~7 的字元索引, 0 是空白, 1 是最矮的 block
+            # 但為了確保有數值的時候至少有東西，我們把範圍縮配到 1~7
+            idx = 1 + int(round(ratio * 6))
+            idx = min(7, max(1, idx))
+            sparkline += chars[idx]
+        
+    return sparkline
 
 def analyze_revenue(df_revenue, last_processed_str=None):
     """
@@ -24,10 +61,11 @@ def analyze_revenue(df_revenue, last_processed_str=None):
     current_ym = f"{last_row['revenue_year']}-{str(last_row['revenue_month']).zfill(2)}"
     
     # Check if data is new
+    is_new = True
     if last_processed_str and current_ym <= last_processed_str:
-        return None
+        is_new = False
         
-    # Process new revenue data
+    # Process revenue data
     current_revenue = last_row['revenue']
     
     # 1. MoM (Month-on-Month)
@@ -76,6 +114,27 @@ def analyze_revenue(df_revenue, last_processed_str=None):
                     months_high_desc = f"近 {w} 個月新高"
                     break
     
+    # 5. Generate Sparkline for last 12 months
+    # 確保抓取完整的 12 個月區間，中間有缺漏的話會保留為 NaN 供生成空白
+    if len(df_revenue) > 0:
+        # Create a period range for the last 12 months based on current month
+        end_period = pd.Period(year=last_row['revenue_year'], month=last_row['revenue_month'], freq='M')
+        start_period = end_period - 11
+        
+        # Build period index for existing data
+        df_rev_copy = df_revenue.copy()
+        df_rev_copy['period'] = df_rev_copy.apply(lambda r: pd.Period(year=int(r['revenue_year']), month=int(r['revenue_month']), freq='M'), axis=1)
+        df_rev_copy = df_rev_copy.set_index('period')
+        
+        # Reindex to force continuous 12 months (will create NaNs for missing months)
+        all_periods = pd.period_range(start=start_period, end=end_period, freq='M')
+        df_12m = df_rev_copy.reindex(all_periods)
+        revenue_values = df_12m['revenue'].tolist()
+    else:
+        revenue_values = []
+        
+    sparkline_str = generate_sparkline(revenue_values)
+    
     return {
         "year": last_row['revenue_year'],
         "month": last_row['revenue_month'],
@@ -83,7 +142,8 @@ def analyze_revenue(df_revenue, last_processed_str=None):
         "mom_pct": mom_pct,
         "yoy_pct": yoy_pct,
         "high_status": months_high_desc,
-        "is_new": True,
+        "sparkline": sparkline_str,
+        "is_new": is_new,
         "date_str": current_ym
     }
 
@@ -116,8 +176,9 @@ def analyze_financials(df_fin, last_processed_str=None):
     current_q_str = f"{year}-Q{quarter}"
     
     # Check if new
+    is_new = True
     if last_processed_str and current_q_str <= last_processed_str:
-        return None
+        is_new = False
         
     latest_data = df_pivot.loc[last_date]
     
@@ -202,6 +263,31 @@ def analyze_financials(df_fin, last_processed_str=None):
         p_eps_y = df_pivot.iloc[prev_y_date_idx].get('EPS', 0)
         if p_eps_y > 0:
             eps_yoy = ((eps - p_eps_y) / p_eps_y) * 100
+    
+    # 4. Extract last 4 quarters data (Quarter string, EPS, Operating Margin)
+    last_4_data = []
+    # Get last 4 rows from df_pivot
+    last_4_rows = df_pivot.tail(4)
+    # Loop over them in reverse order (newest first)
+    for date_idx, row in last_4_rows.iloc[::-1].iterrows():
+        # Parse date to quarter format
+        dt = pd.to_datetime(date_idx)
+        q_year = dt.year
+        q_qtr = (dt.month - 1) // 3 + 1
+        q_str = f"{q_year}-Q{q_qtr}"
+        
+        q_rev = row.get('Revenue', 0)
+        q_op = row.get('OperatingIncome', 0)
+        
+        # calculate margin
+        q_om = (q_op / q_rev * 100) if q_rev and not pd.isna(q_rev) and q_rev > 0 else 0
+        q_eps = row.get('EPS', 0)
+        
+        last_4_data.append({
+            "quarter_str": q_str,
+            "eps": q_eps if not pd.isna(q_eps) else 0.0,
+            "om": q_om
+        })
 
     return {
         "quarter_str": current_q_str,
@@ -212,7 +298,8 @@ def analyze_financials(df_fin, last_processed_str=None):
         "eps_qoq": eps_qoq, "eps_yoy": eps_yoy,
         "eps_ytd": eps_ytd, "eps_ytd_last_year": eps_ytd_last_year,
         "eps_ytd_growth": eps_ytd_growth,
-        "is_new": True
+        "last_4_data": last_4_data,
+        "is_new": is_new
     }
 
 
