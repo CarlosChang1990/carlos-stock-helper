@@ -27,7 +27,7 @@ from core.flex_message import (
     build_carousel, 
     split_bubbles_to_carousels
 )
-from core.test_logic import run_batch_test 
+# from core.test_logic import run_batch_test 
 
 app = Flask(__name__)
 

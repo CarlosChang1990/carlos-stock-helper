@@ -5,7 +5,7 @@ import os
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from core.test_logic import run_batch_test
+from scripts.run_batch_test_logic import run_batch_test
 from core.notifier import send_line_notification
 
 # 配置日誌
