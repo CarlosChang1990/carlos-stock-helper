@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 # Model fallback list - verified to support Google Search tool
 # Paid tier: 使用 gemini-2.5-pro 做財務分析，品質最佳
 SEARCH_CAPABLE_MODELS = [
-    "gemini-2.5-pro",     # 主要：最強推理能力，適合財務分析
-    "gemini-2.5-flash",   # 備援：速度與品質平衡
+    "gemini-3.5-flash",     # 主要：最強推理能力，適合財務分析
+    "gemini-2.5-pro",   # 備援：速度與品質平衡
 ]
 
 # Vision capable models for image recognition
 # 圖片辨識用便宜的 model 就足夠
 VISION_CAPABLE_MODELS = [
-    "gemini-2.0-flash",   # 主要：便宜且足夠辨識股票名稱
-    "gemini-2.5-flash",   # 備援
+    "gemini-3.1-flash-lite",   # 主要：便宜且足夠辨識股票名稱
+    "gemini-3.5-flash",   # 備援
 ]
 
 
